@@ -110,7 +110,7 @@ class NPC {
     this.game=game; this.cfg=cfg; this.role=cfg.role; this.group=makePerson(roleColor(cfg.role));
     this.group.position.set(cfg.x,0,cfg.z); this.game.world.add(this.group);
     this.patrol=(cfg.patrol||[[cfg.x,cfg.z]]).map(p=>new THREE.Vector3(p[0],0,p[1])); this.index=0; this.speed=cfg.speed||1.2;
-    this.range=cfg.range||8; this.fov=THREE.MathUtils.degToRad(cfg.fov||72); this.yaw=0; this.state='patrol'; this.suspicion=0; this.lastSeen=null; this.investigateTarget=null; this.investigateUntil=0; this.pause=0; this.lastTone=0; this.reachedRace=false; this.navPath=[]; this.navTarget=null; this.navGoal=null; this.navVersion=-1; this.navRefreshAt=0;
+    this.range=cfg.range||8; this.fov=THREE.MathUtils.degToRad(cfg.fov||72); this.yaw=0; this.state='patrol'; this.suspicion=0; this.lastSeen=null; this.investigateTarget=null; this.investigateUntil=0; this.investigateStopRadius=.95; this.pause=0; this.lastTone=0; this.reachedRace=false; this.navPath=[]; this.navTarget=null; this.navGoal=null; this.navVersion=-1; this.navRefreshAt=0; this.navStopRadius=.2; this.stuckFor=0; this.lastMovePos=this.group.position.clone();
     this.cone=this.makeCone(); this.game.world.add(this.cone);
     this.tag=this.makeTag(); this.group.add(this.tag);
   }
@@ -143,31 +143,46 @@ class NPC {
     }
     return true;
   }
-  distract(target,duration=10){
+  distract(target,duration=10,approachRadius=.95){
     if(this.role==='rival') return;
-    this.investigateTarget=new THREE.Vector3(target.x,0,target.z); this.investigateUntil=this.game.elapsed+duration; this.state='investigate'; this.suspicion=Math.min(this.suspicion,.32); this.pause=0; this.navPath=[]; this.navTarget=null;
+    this.investigateTarget=new THREE.Vector3(target.x,0,target.z);
+    this.investigateStopRadius=Math.max(.65,approachRadius||.95);
+    this.investigateUntil=this.game.elapsed+duration;
+    this.state='investigate'; this.suspicion=Math.min(this.suspicion,.32); this.pause=0;
+    this.navPath=[]; this.navTarget=null; this.navGoal=null; this.navRefreshAt=0; this.stuckFor=0;
   }
-  moveToward(target,dt,speed=this.speed){
+  moveToward(target,dt,speed=this.speed,stopRadius=.20){
     const pos=this.group.position;
-    const changed=!this.navTarget || this.navTarget.distanceToSquared(target)>.36 || this.navVersion!==this.game.navVersion || this.game.elapsed>=this.navRefreshAt;
+    const changed=!this.navTarget || this.navTarget.distanceToSquared(target)>.20 || Math.abs(this.navStopRadius-stopRadius)>.05 || this.navVersion!==this.game.navVersion || this.game.elapsed>=this.navRefreshAt;
     if(changed){
-      const route=this.game.findPath(pos,target,.30);
+      const route=this.game.findPath(pos,target,.30,{stopRadius});
       this.navPath=route?.points || [];
-      this.navGoal=route?.goal || target.clone();
+      this.navGoal=route?.goal || null;
       this.navTarget=target.clone();
+      this.navStopRadius=stopRadius;
       this.navVersion=this.game.navVersion;
-      this.navRefreshAt=this.game.elapsed+1.0;
+      this.navRefreshAt=this.game.elapsed+.85;
     }
-    if(this.navGoal && pos.distanceTo(this.navGoal)<.24){this.navPath=[];return true;}
-    while(this.navPath.length && pos.distanceTo(this.navPath[0])<.20)this.navPath.shift();
+    if(!this.navGoal){
+      this.stuckFor+=dt;
+      if(this.stuckFor>.45)this.navRefreshAt=0;
+      return false;
+    }
+    if(pos.distanceTo(this.navGoal)<Math.max(.18,stopRadius*.35)){this.navPath=[];this.stuckFor=0;return true;}
+    while(this.navPath.length && pos.distanceTo(this.navPath[0])<.18)this.navPath.shift();
     const dest=this.navPath[0] || this.navGoal;
     if(!dest) return false;
     const dx=dest.x-pos.x,dz=dest.z-pos.z,dist=Math.hypot(dx,dz);
-    if(dist<.02) return this.navPath.length===0;
+    if(dist<.015) return this.navPath.length===0;
     this.yaw=Math.atan2(dx,dz); this.group.rotation.y=this.yaw;
+    const beforeX=pos.x,beforeZ=pos.z;
     const step=Math.min(dist,speed*dt); const nx=pos.x+Math.sin(this.yaw)*step,nz=pos.z+Math.cos(this.yaw)*step;
-    if(!this.game.collisionAtRadius(nx,nz,.30)){pos.x=nx;pos.z=nz;}else{this.navRefreshAt=0;}
-    return this.navGoal ? pos.distanceTo(this.navGoal)<.24 : false;
+    // NPC navigation ignores social/hard-gate circles. Those are player gameplay gates, not walls.
+    if(!this.game.staticCollisionAtRadius(nx,nz,.30)){pos.x=nx;pos.z=nz;}else{this.navRefreshAt=0;}
+    const moved=Math.hypot(pos.x-beforeX,pos.z-beforeZ);
+    if(moved<.002 && dist>.25){this.stuckFor+=dt;if(this.stuckFor>.38){this.navRefreshAt=0;this.navPath=[];}}
+    else this.stuckFor=0;
+    return this.navGoal ? pos.distanceTo(this.navGoal)<Math.max(.20,stopRadius*.35) : false;
   }
   update(dt){
     if(this.game.paused || this.game.finished) return;
@@ -198,7 +213,7 @@ class NPC {
     }
 
     if(this.state==='investigate' && this.investigateTarget){
-      if(this.moveToward(this.investigateTarget,dt,this.speed*1.1)) this.pause+=dt;
+      if(this.moveToward(this.investigateTarget,dt,this.speed*1.1,this.investigateStopRadius)) this.pause+=dt;
       if(this.game.elapsed>this.investigateUntil){this.state='patrol';this.investigateTarget=null;this.pause=0;}
     } else if(this.state==='alerted' && this.lastSeen){
       this.moveToward(this.lastSeen,dt,this.speed*1.45);
@@ -296,19 +311,22 @@ class Game {
   }
   addObstacle(o){
     const isWall=o.label==='stěna'||o.label?.includes('příčka'),isDoor=o.label==='dveře'||o.door,isDesk=o.label==='stůl',isPlant=o.label==='květina',isGlass=o.label?.includes('skleněná'),isTurn=o.label?.includes('turniket');
-    const collisionMat=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:(isDesk||isPlant||isTurn)?0:1,depthWrite:!(isDesk||isPlant||isTurn)});
+    const isMachine=o.label?.includes('kopírka')||o.label?.includes('tiskárna');
+    const hasInteractiveMachine=isMachine && (this.level?.interactions||[]).some(c=>['copier','printerjam'].includes(c.type)&&Math.hypot(c.x-o.x,c.z-o.z)<.25);
+    const invisibleCollision=isDesk||isPlant||isTurn||hasInteractiveMachine;
+    const collisionMat=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:invisibleCollision?0:1,depthWrite:!invisibleCollision});
     let mat;
     if(isGlass)mat=new THREE.MeshPhysicalMaterial({color:0xbad8e8,roughness:.12,metalness:0,transparent:true,opacity:.28,transmission:.42,thickness:.08});
     else if(isWall){const tex=this.proceduralTexture('#e5e4df',8);tex.repeat.set(Math.max(1,o.w/2),Math.max(1,o.d/2));mat=new THREE.MeshStandardMaterial({color:this.level.theme.wall,map:tex,roughness:.9});}
     else if(isDoor)mat=new THREE.MeshStandardMaterial({color:0x624a37,roughness:.46,metalness:.07});
     else mat=new THREE.MeshStandardMaterial({color:0x69727a,roughness:.66,metalness:.08});
-    const mesh=new THREE.Mesh(new THREE.BoxGeometry(o.w,o.h,o.d),(isDesk||isPlant||isTurn)?collisionMat:mat);mesh.position.set(o.x,o.h/2,o.z);mesh.castShadow=!isGlass&&!isDesk&&!isPlant&&!isTurn;mesh.receiveShadow=true;mesh.userData.obstacle=o;this.world.add(mesh);this.obstacleMeshes.push(mesh);
+    const mesh=new THREE.Mesh(new THREE.BoxGeometry(o.w,o.h,o.d),invisibleCollision?collisionMat:mat);mesh.position.set(o.x,o.h/2,o.z);mesh.castShadow=!isGlass&&!isDesk&&!isPlant&&!isTurn;mesh.receiveShadow=true;mesh.userData.obstacle=o;this.world.add(mesh);this.obstacleMeshes.push(mesh);
     if(isWall&&!isGlass){const baseMat=new THREE.MeshStandardMaterial({color:0xc4c5c3,roughness:.7});if(o.w>o.d){const b=new THREE.Mesh(new THREE.BoxGeometry(o.w,.11,o.d+.035),baseMat);b.position.set(o.x,.055,o.z);this.world.add(b);}else{const b=new THREE.Mesh(new THREE.BoxGeometry(o.w+.035,.11,o.d),baseMat);b.position.set(o.x,.055,o.z);this.world.add(b);}}
     if(isDesk)this.decorateDesk(o);
     else if(isDoor)this.decorateDoor(o);
     else if(isPlant)this.decoratePlant(o);
     else if(isTurn)this.decorateTurnstile(o);
-    else if(o.label?.includes('kopírka')||o.label?.includes('tiskárna'))this.decorateMachine(o);
+    else if(isMachine&&!hasInteractiveMachine)this.decorateMachine(o);
     else if(o.label?.includes('recepce')||o.label?.includes('kuchyň'))this.decorateCounter(o);
   }
   decorateDoor(o){
@@ -366,18 +384,111 @@ class Game {
   interactionVisual(cfg){
     const g=new THREE.Group();let color=0x6bcaff;
     if(cfg.type.startsWith('pickup'))color=0xd9ff5b;if(cfg.type==='workspot')color=0x79f0df;if(cfg.type==='badge-door')color=0xffd36e;
-    const metal=new THREE.MeshStandardMaterial({color:0x343d45,roughness:.45,metalness:.35});const plastic=new THREE.MeshStandardMaterial({color:0xe1e4e6,roughness:.52});
-    if(cfg.type==='coffee'){const body=new THREE.Mesh(new THREE.BoxGeometry(.58,.78,.52),metal);body.position.y=.42;g.add(body);const cup=new THREE.Mesh(new THREE.CylinderGeometry(.12,.105,.22,16),new THREE.MeshStandardMaterial({color:0xf2f2ee,roughness:.7}));cup.position.set(.0,.14,.36);g.add(cup);}
-    else if(cfg.type==='microwave'){const body=new THREE.Mesh(new THREE.BoxGeometry(.78,.46,.58),metal);body.position.y=.34;g.add(body);const door=new THREE.Mesh(new THREE.BoxGeometry(.50,.30,.02),new THREE.MeshStandardMaterial({color:0x111a22,roughness:.2,metalness:.1}));door.position.set(-.08,.35,.30);g.add(door);}
-    else if(cfg.type==='copier'||cfg.type==='printerjam'){const b=new THREE.Mesh(new THREE.BoxGeometry(.72,.82,.62),plastic);b.position.y=.43;g.add(b);const lid=new THREE.Mesh(new THREE.BoxGeometry(.62,.08,.48),metal);lid.position.y=.87;g.add(lid);}
-    else if(cfg.type==='projector'){const b=new THREE.Mesh(new THREE.BoxGeometry(.58,.20,.42),plastic);b.position.y=.28;g.add(b);const lens=new THREE.Mesh(new THREE.CylinderGeometry(.08,.08,.12,16),new THREE.MeshStandardMaterial({color:0x141a20,roughness:.15}));lens.rotation.x=Math.PI/2;lens.position.set(0,.28,.26);g.add(lens);}
-    else if(cfg.type==='pickup-folder'){const b=new THREE.Mesh(new THREE.BoxGeometry(.55,.06,.72),new THREE.MeshStandardMaterial({color:0x8f5d34,roughness:.66}));b.position.y=.12;b.rotation.y=.25;g.add(b);}
-    else if(cfg.type==='pickup-badge'){const b=new THREE.Mesh(new THREE.BoxGeometry(.34,.035,.52),new THREE.MeshStandardMaterial({color:0xe7edf0,roughness:.42}));b.position.y=.18;g.add(b);const chip=new THREE.Mesh(new THREE.BoxGeometry(.12,.02,.10),new THREE.MeshStandardMaterial({color:0xd8b35a,metalness:.65,roughness:.25}));chip.position.set(0,.205,.05);g.add(chip);}
-    else if(cfg.type==='pickup-headset'){const band=new THREE.Mesh(new THREE.TorusGeometry(.28,.035,10,24,Math.PI),metal);band.rotation.z=Math.PI/2;band.position.y=.35;g.add(band);}
-    else if(cfg.type==='meeting'||cfg.type==='phone'){const b=new THREE.Mesh(new THREE.BoxGeometry(.38,.05,.68),new THREE.MeshStandardMaterial({color:0x17212a,roughness:.28,metalness:.18,emissive:0x123247,emissiveIntensity:.35}));b.position.y=.18;g.add(b);}
-    else {const body=new THREE.Mesh(new THREE.CylinderGeometry(.18,.22,.42,16),new THREE.MeshStandardMaterial({color,roughness:.5,metalness:.12}));body.position.y=.25;g.add(body);}
-    const halo=new THREE.Mesh(new THREE.TorusGeometry(.42,.018,8,32),new THREE.MeshBasicMaterial({color,transparent:true,opacity:.46,depthWrite:false}));halo.rotation.x=Math.PI/2;halo.position.y=.035;g.add(halo);
-    g.position.set(cfg.x,0,cfg.z);g.userData.cfg=cfg;g.userData.used=false;g.userData.cooldown=0;this.world.add(g);this.interactive.push(g);return g;
+    const M={
+      steel:new THREE.MeshStandardMaterial({color:0x5a646c,roughness:.28,metalness:.72}),
+      dark:new THREE.MeshStandardMaterial({color:0x20272d,roughness:.38,metalness:.18}),
+      black:new THREE.MeshStandardMaterial({color:0x11161a,roughness:.28,metalness:.22}),
+      white:new THREE.MeshStandardMaterial({color:0xe8ebec,roughness:.48,metalness:.05}),
+      glass:new THREE.MeshPhysicalMaterial({color:0x233844,roughness:.08,metalness:.05,transparent:true,opacity:.68,transmission:.22,thickness:.04}),
+      paper:new THREE.MeshStandardMaterial({color:0xf5f4ee,roughness:.92}),
+      blue:new THREE.MeshStandardMaterial({color:0x183a52,emissive:0x236d9d,emissiveIntensity:.72,roughness:.18}),
+      red:new THREE.MeshStandardMaterial({color:0xb93a3f,roughness:.48}),
+      brown:new THREE.MeshStandardMaterial({color:0x80512f,roughness:.72}),
+      green:new THREE.MeshStandardMaterial({color:0x4a7f4b,roughness:.72})
+    };
+    const box=(w,h,d,mat,x=0,y=h/2,z=0)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;g.add(m);return m;};
+    const cyl=(rt,rb,h,mat,x=0,y=h/2,z=0,segments=18)=>{const m=new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,h,segments),mat);m.position.set(x,y,z);m.castShadow=true;g.add(m);return m;};
+    const screen=(w,h,x,y,z,rotX=0)=>{const m=box(w,.018,h,M.blue,x,y,z);m.rotation.x=rotX;return m;};
+    const paper=(w,d,x,y,z,ry=0)=>{const m=box(w,.018,d,M.paper,x,y,z);m.rotation.y=ry;return m;};
+
+    if(cfg.type==='coffee'){
+      // Counter-top automatic espresso machine: hopper, screen, twin spout, drip tray and mug.
+      box(.76,.76,.58,M.black,0,.45,0);box(.66,.12,.52,M.steel,0,.86,0);
+      const hopper=cyl(.16,.19,.28,new THREE.MeshPhysicalMaterial({color:0x50311d,roughness:.25,transparent:true,opacity:.82,transmission:.12}),-.20,1.08,-.03,20);
+      screen(.25,.12,.12,.67,.296,-.12);
+      box(.32,.08,.10,M.dark,0,.50,.31);cyl(.035,.035,.18,M.steel,-.08,.40,.36,12);cyl(.035,.035,.18,M.steel,.08,.40,.36,12);
+      box(.52,.045,.30,M.steel,0,.15,.33);for(let i=-2;i<=2;i++)box(.018,.012,.24,M.dark,i*.08,.18,.34);
+      const cup=cyl(.13,.11,.22,new THREE.MeshStandardMaterial({color:0xf1f0ea,roughness:.72}),0,.27,.42,20);const handle=new THREE.Mesh(new THREE.TorusGeometry(.08,.018,8,16,Math.PI*1.55),M.white);handle.rotation.y=Math.PI/2;handle.position.set(.13,.29,.43);g.add(handle);
+    }
+    else if(cfg.type==='microwave'){
+      box(.90,.52,.62,M.steel,0,.36,0);box(.64,.37,.025,M.black,-.09,.37,.322);box(.58,.30,.016,M.glass,-.09,.37,.338);
+      box(.13,.37,.028,M.dark,.35,.37,.323);screen(.085,.055,.35,.48,.341);for(let r=0;r<3;r++)for(let c=0;c<3;c++)cyl(.012,.012,.008,M.white,.32+c*.035,.39-r*.045,.343,8);
+      box(.05,.39,.035,M.black,.245,.37,.342);
+    }
+    else if(cfg.type==='copier'){
+      // Floor standing multifunction copier with drawers, scanner, ADF, output bay, screen and paper.
+      box(.92,.68,.72,M.white,0,.36,0);box(.84,.11,.65,M.dark,0,.75,-.01);
+      box(.76,.10,.58,M.white,0,.86,-.03);box(.68,.08,.50,M.dark,-.02,.94,-.08);box(.46,.10,.26,M.dark,.05,.67,.36);
+      box(.52,.035,.33,new THREE.MeshStandardMaterial({color:0x303940,roughness:.26,metalness:.30}),.02,.64,.38);
+      screen(.25,.15,.46,.80,.26,-.28);
+      for(let i=0;i<3;i++){box(.76,.035,.035,M.steel,0,.18+i*.16,.365);box(.67,.012,.018,M.dark,0,.18+i*.16,.386);}
+      paper(.42,.31,.03,1.01,-.07,.03);paper(.40,.29,.04,1.025,-.06,-.03);
+    }
+    else if(cfg.type==='printerjam'){
+      // Laser printer with clearly visible jammed sheet.
+      box(.82,.48,.68,M.white,0,.34,0);box(.68,.16,.47,M.dark,0,.65,-.04);box(.52,.08,.28,M.black,0,.52,.355);screen(.16,.08,.25,.62,.285,-.20);
+      const sheet=paper(.44,.58,0,.78,.13);sheet.rotation.x=-.55;sheet.rotation.z=.05;
+      box(.62,.055,.35,M.steel,0,.12,.26);
+    }
+    else if(cfg.type==='projector'){
+      box(.72,.22,.50,M.white,0,.32,0);const lens=cyl(.105,.105,.15,M.black,0,.33,.31,24);lens.rotation.x=Math.PI/2;
+      cyl(.072,.072,.08,new THREE.MeshStandardMaterial({color:0x8ac8ee,emissive:0x6bcaff,emissiveIntensity:2.0,roughness:.1}),0,.33,.37,20);
+      for(let i=-2;i<=2;i++)box(.045,.012,.24,M.dark,i*.085,.445,-.03);
+    }
+    else if(cfg.type==='pickup-folder'){
+      const b=box(.60,.07,.78,M.brown,0,.14,0);b.rotation.y=.18;box(.24,.025,.10,new THREE.MeshStandardMaterial({color:0xd2aa55,roughness:.65}),-.13,.185,.24);
+      paper(.49,.66,.02,.19,-.01,-.02);
+    }
+    else if(cfg.type==='pickup-badge'){
+      box(.36,.035,.54,M.white,0,.17,0);box(.29,.012,.20,M.blue,0,.194,-.11);box(.10,.018,.09,new THREE.MeshStandardMaterial({color:0xd8b35a,metalness:.72,roughness:.23}),.08,.20,.13);
+      const clip=box(.07,.08,.025,M.steel,0,.25,-.25);clip.rotation.x=.2;
+    }
+    else if(cfg.type==='pickup-headset'){
+      const band=new THREE.Mesh(new THREE.TorusGeometry(.29,.035,10,28,Math.PI),M.black);band.rotation.z=Math.PI/2;band.position.y=.38;g.add(band);
+      box(.10,.20,.13,M.dark,-.29,.33,0);box(.10,.20,.13,M.dark,.29,.33,0);const boom=cyl(.018,.018,.32,M.steel,.36,.27,.08,10);boom.rotation.z=-.9;cyl(.035,.035,.06,M.black,.48,.15,.08,10);
+    }
+    else if(cfg.type==='phone'){
+      box(.52,.12,.62,M.dark,0,.14,0);screen(.24,.10,0,.235,-.12,-.15);
+      for(let r=0;r<3;r++)for(let c=0;c<3;c++)cyl(.018,.018,.01,M.white,-.12+c*.12,.21-r*.065,.18,8);
+      const handset=box(.12,.11,.64,M.black,-.31,.27,0);handset.rotation.z=.05;box(.17,.15,.17,M.black,-.31,.30,-.25);box(.17,.15,.17,M.black,-.31,.30,.25);
+    }
+    else if(cfg.type==='meeting'){
+      // Laptop/calendar terminal.
+      box(.64,.055,.46,M.dark,0,.13,.10);const lid=box(.64,.035,.42,M.black,0,.40,-.10);lid.rotation.x=-.80;screen(.54,.30,0,.42,.05,-.80);
+      paper(.42,.26,.46,.11,.08,.18);
+    }
+    else if(cfg.type==='snacks'){
+      box(.95,.74,.52,new THREE.MeshStandardMaterial({color:0x6e7478,roughness:.62}),0,.38,0);box(1.02,.07,.58,M.dark,0,.78,0);
+      const bowl=cyl(.24,.17,.12,new THREE.MeshStandardMaterial({color:0xd5d7d5,roughness:.55}),-.20,.87,0,20);for(let i=0;i<7;i++){const a=i/7*Math.PI*2;cyl(.045,.04,.11,new THREE.MeshStandardMaterial({color:i%2?0xd69c45:0xb84d43,roughness:.7}),-.20+Math.cos(a)*.12,.97,Math.sin(a)*.08,10);}
+      box(.28,.35,.18,new THREE.MeshStandardMaterial({color:0xe0c153,roughness:.72}),.28,.97,0);box(.20,.27,.14,new THREE.MeshStandardMaterial({color:0xc4513e,roughness:.72}),.42,.93,.04);
+    }
+    else if(cfg.type==='elevator'){
+      // Call panel + small section of steel elevator doors.
+      box(1.15,1.70,.10,M.steel,0,.85,-.12);box(.025,1.54,.04,M.dark,0,.85,-.055);box(.16,.46,.07,M.dark,.70,.86,0);cyl(.045,.045,.025,new THREE.MeshStandardMaterial({color:0xdce8ef,emissive:0x8ed7ff,emissiveIntensity:1.1}),.70,.96,.05,12);cyl(.045,.045,.025,M.white,.70,.78,.05,12);
+    }
+    else if(cfg.type==='badge-door'){
+      // Access reader pedestal.
+      box(.18,.96,.18,M.steel,0,.50,0);box(.30,.30,.10,M.dark,0,1.02,.02);screen(.20,.10,0,1.07,.08);cyl(.025,.025,.018,new THREE.MeshStandardMaterial({color:0x70ff92,emissive:0x34d45d,emissiveIntensity:1.3}),.08,.96,.08,12);
+    }
+    else if(cfg.type==='door'){
+      // Door handle / access plate beside an actual door obstacle.
+      box(.16,.72,.10,M.steel,0,.40,0);box(.24,.18,.07,M.dark,0,.68,.04);const h=box(.34,.045,.045,M.steel,.13,.46,.08);h.rotation.y=.05;
+    }
+    else if(cfg.type==='workspot'){
+      // Workstation marker: laptop + glowing spreadsheet, not an abstract cylinder.
+      box(.72,.055,.48,M.dark,0,.12,.06);const lid=box(.64,.035,.42,M.black,0,.41,-.09);lid.rotation.x=-.82;screen(.54,.29,0,.43,.055,-.82);paper(.34,.24,.47,.11,.05,.1);
+    }
+    else {
+      const body=cyl(.18,.22,.42,new THREE.MeshStandardMaterial({color,roughness:.5,metalness:.12}),0,.25,0,16);body.position.y=.25;
+    }
+    // Only the halo animates. Real-world objects must not rotate like arcade pickups.
+    const halo=new THREE.Mesh(new THREE.TorusGeometry(.46,.020,8,36),new THREE.MeshBasicMaterial({color,transparent:true,opacity:.50,depthWrite:false}));halo.rotation.x=Math.PI/2;halo.position.y=.035;g.add(halo);g.userData.halo=halo;
+    let baseY=0;
+    if(!['copier','printerjam','badge-door','door','pickup-folder','pickup-badge','pickup-headset'].includes(cfg.type)){
+      const support=(this.activeObstacles||[]).filter(o=>['stůl','kuchyňská linka','recepce'].includes(o.label)&&cfg.x>o.x-o.w/2&&cfg.x<o.x+o.w/2&&cfg.z>o.z-o.d/2&&cfg.z<o.z+o.d/2).sort((a,b)=>b.h-a.h)[0];
+      if(support)baseY=support.h+.015;
+    }
+    g.position.set(cfg.x,baseY,cfg.z);g.userData.cfg=cfg;g.userData.used=false;g.userData.cooldown=0;this.world.add(g);this.interactive.push(g);return g;
   }
   startLevel(index){
     const level=LEVELS[index]; if(!level || level.id>SAVE.unlocked)return;
@@ -403,41 +514,67 @@ class Game {
   hardGateAt(x,z,r=this.playerRadius){
     for(const n of this.npcs||[]){if(!n.cfg?.hardBlock||this.npcGateOpen(n))continue;const rr=(n.cfg.gateRadius||.85)+r;if(Math.hypot(x-n.group.position.x,z-n.group.position.z)<rr)return n;}return null;
   }
-  collisionAtRadius(x,z,r=this.playerRadius){
+  staticCollisionAtRadius(x,z,r=.30){
     for(const o of this.activeObstacles){if(x+r>o.x-o.w/2&&x-r<o.x+o.w/2&&z+r>o.z-o.d/2&&z-r<o.z+o.d/2)return true;}
+    return false;
+  }
+  collisionAtRadius(x,z,r=this.playerRadius){
+    if(this.staticCollisionAtRadius(x,z,r))return true;
     if(this.hardGateAt(x,z,r))return true;
     return false;
   }
   collisionAt(x,z){return this.collisionAtRadius(x,z,this.playerRadius);}
-  findPath(start,target,radius=.30){
+  segmentClearStatic(a,b,radius=.30){
+    const dist=a.distanceTo(b),steps=Math.max(1,Math.ceil(dist/.22));
+    for(let k=1;k<=steps;k++){const t=k/steps,x=lerp(a.x,b.x,t),z=lerp(a.z,b.z,t);if(this.staticCollisionAtRadius(x,z,radius))return false;}
+    return true;
+  }
+  smoothNavPoints(start,points,radius=.30){
+    if(!points.length)return [];
+    const src=[start.clone(),...points],out=[];let anchor=0;
+    while(anchor<src.length-1){let far=anchor+1;for(let j=src.length-1;j>anchor+1;j--){if(this.segmentClearStatic(src[anchor],src[j],radius)){far=j;break;}}out.push(src[far]);anchor=far;}
+    return out;
+  }
+  findPath(start,target,radius=.30,options={}){
     if(!this.level)return null;
-    const step=.62,[w,d]=this.level.size,margin=radius+.12;
+    const stopRadius=Math.max(.16,options.stopRadius??.20);
+    const step=.50,[w,d]=this.level.size,margin=radius+.14;
     const minX=-w/2+margin,maxX=w/2-margin,minZ=-d/2+margin,maxZ=d/2-margin;
     const nx=Math.floor((maxX-minX)/step)+1,nz=Math.floor((maxZ-minZ)/step)+1;
     const center=(i,j)=>new THREE.Vector3(minX+i*step,0,minZ+j*step);
     const cell=(v)=>[clamp(Math.round((v.x-minX)/step),0,nx-1),clamp(Math.round((v.z-minZ)/step),0,nz-1)];
-    const blocked=(i,j)=>{const p=center(i,j);return this.collisionAtRadius(p.x,p.z,radius);};
-    const nearestFree=(v,maxRing=5)=>{
-      const [ci,cj]=cell(v); if(!blocked(ci,cj))return [ci,cj];
-      let best=null,bestD=Infinity;
+    // Navigation only sees actual map geometry. Social blockers are gameplay rules, not nav walls.
+    const blocked=(i,j)=>{const p=center(i,j);return this.staticCollisionAtRadius(p.x,p.z,radius);};
+    const nearestFree=(v,maxRing=6)=>{
+      const [ci,cj]=cell(v);if(!blocked(ci,cj))return [ci,cj];let best=null,bestD=Infinity;
       for(let ring=1;ring<=maxRing;ring++)for(let di=-ring;di<=ring;di++)for(let dj=-ring;dj<=ring;dj++){
         if(Math.max(Math.abs(di),Math.abs(dj))!==ring)continue;const i=ci+di,j=cj+dj;if(i<0||j<0||i>=nx||j>=nz||blocked(i,j))continue;const p=center(i,j),dd=p.distanceToSquared(v);if(dd<bestD){bestD=dd;best=[i,j];}
       }
       return best;
     };
-    const startCell=nearestFree(start,3),goalCell=nearestFree(target,5);if(!startCell||!goalCell)return null;
-    const key=(i,j)=>i+','+j, goalKey=key(...goalCell), open=[startCell], openSet=new Set([key(...startCell)]), came=new Map(), g=new Map([[key(...startCell),0]]);
-    const heuristic=(i,j)=>Math.hypot(i-goalCell[0],j-goalCell[1]);
+    const startCell=nearestFree(start,6);if(!startCell)return null;
+    const key=(i,j)=>i+','+j,startKey=key(...startCell),open=[startCell],openSet=new Set([startKey]),came=new Map(),gScore=new Map([[startKey,0]]),closed=new Set();
+    const heuristic=(i,j)=>Math.max(0,center(i,j).distanceTo(target)-stopRadius)/step;
     const dirs=[[1,0,1],[-1,0,1],[0,1,1],[0,-1,1],[1,1,1.414],[-1,1,1.414],[1,-1,1.414],[-1,-1,1.414]];
-    let found=null,guard=0;
-    while(open.length && guard++<12000){
-      let bi=0,bf=Infinity;for(let q=0;q<open.length;q++){const [i,j]=open[q],k=key(i,j),f=(g.get(k)??Infinity)+heuristic(i,j);if(f<bf){bf=f;bi=q;}}
-      const [i,j]=open.splice(bi,1)[0],ck=key(i,j);openSet.delete(ck);if(ck===goalKey){found=[i,j];break;}
-      for(const [di,dj,cost] of dirs){const a=i+di,b=j+dj;if(a<0||b<0||a>=nx||b>=nz||blocked(a,b))continue;if(di&&dj&&(blocked(i+di,j)||blocked(i,j+dj)))continue;const nk=key(a,b),ng=(g.get(ck)??Infinity)+cost;if(ng>=(g.get(nk)??Infinity))continue;came.set(nk,ck);g.set(nk,ng);if(!openSet.has(nk)){open.push([a,b]);openSet.add(nk);}}
+    let foundKey=null,bestKey=startKey,bestDist=center(...startCell).distanceTo(target),guard=0;
+    while(open.length && guard++<18000){
+      let bi=0,bf=Infinity;for(let q=0;q<open.length;q++){const [i,j]=open[q],k=key(i,j),f=(gScore.get(k)??Infinity)+heuristic(i,j);if(f<bf){bf=f;bi=q;}}
+      const [i,j]=open.splice(bi,1)[0],ck=key(i,j);openSet.delete(ck);if(closed.has(ck))continue;closed.add(ck);
+      const here=center(i,j),toTarget=here.distanceTo(target);if(toTarget<bestDist){bestDist=toTarget;bestKey=ck;}
+      if(toTarget<=stopRadius && this.segmentClearStatic(here,target,Math.min(radius,.22))){foundKey=ck;break;}
+      for(const [di,dj,cost] of dirs){const a=i+di,b=j+dj;if(a<0||b<0||a>=nx||b>=nz||blocked(a,b))continue;if(di&&dj&&(blocked(i+di,j)||blocked(i,j+dj)))continue;const nk=key(a,b);if(closed.has(nk))continue;const ng=(gScore.get(ck)??Infinity)+cost;if(ng>=(gScore.get(nk)??Infinity))continue;came.set(nk,ck);gScore.set(nk,ng);if(!openSet.has(nk)){open.push([a,b]);openSet.add(nk);}}
     }
-    if(!found)return null;
-    const cells=[];let k=goalKey;while(k){const [i,j]=k.split(',').map(Number);cells.push([i,j]);if(k===key(...startCell))break;k=came.get(k);}cells.reverse();
-    const points=cells.slice(1).map(([i,j])=>center(i,j));const goal=center(...goalCell);return {points,goal};
+    // If the exact interaction point is geometrically unreachable, use the closest cell in the same reachable component.
+    const endKey=foundKey||bestKey;if(!endKey)return null;
+    const cells=[];let k=endKey;while(k){const [i,j]=k.split(',').map(Number);cells.push([i,j]);if(k===startKey)break;k=came.get(k);}cells.reverse();
+    if(!cells.length||key(...cells[0])!==startKey)return null;
+    let points=cells.slice(1).map(([i,j])=>center(i,j));
+    const endCell=cells[cells.length-1],goal=center(...endCell);
+    // Add the actual target only if an NPC can stand there safely; otherwise stop next to it.
+    if(!this.staticCollisionAtRadius(target.x,target.z,radius) && goal.distanceTo(target)<=stopRadius && this.segmentClearStatic(goal,target,radius*.85)){points.push(target.clone());}
+    points=this.smoothNavPoints(start,points,radius);
+    const finalGoal=points.length?points[points.length-1]:goal;
+    return {points,goal:finalGoal,reachedTarget:!!foundKey,distanceToTarget:finalGoal.distanceTo(target)};
   }
   movePlayer(dt){
     let x=0,z=0;
@@ -459,7 +596,7 @@ class Game {
     }
     this.player.scale.y=this.stealth?.83:1;
   }
-  emitNoise(pos,radius){for(const n of this.npcs){if(n.role==='rival')continue;if(n.group.position.distanceTo(pos)<radius&&!n.canSeePlayer())n.distract(pos,4.5);}}
+  emitNoise(pos,radius){for(const n of this.npcs){if(n.role==='rival')continue;if(n.group.position.distanceTo(pos)<radius&&!n.canSeePlayer())n.distract(pos,4.5,.55);}}
   socialModifierFor(npc){
     let m=1;
     if(this.working)m*=.08;
@@ -513,7 +650,7 @@ class Game {
     }
     obj.userData.used=true;obj.userData.cooldown=this.elapsed+8;this.diversions++;this.uniqueDiversions.add(c.type);
     const radius=c.radius||10,duration=c.duration||10;let count=0;
-    for(const n of this.npcs){if(n.role==='rival')continue;if(c.targetIds&&!c.targetIds.includes(n.cfg.id))continue;if(c.role&&n.role!==c.role)continue;const targeted=Array.isArray(c.targetIds)&&c.targetIds.includes(n.cfg.id);if(targeted||n.group.position.distanceTo(obj.position)<=radius){n.distract(obj.position,duration);count++;}}
+    for(const n of this.npcs){if(n.role==='rival')continue;if(c.targetIds&&!c.targetIds.includes(n.cfg.id))continue;if(c.role&&n.role!==c.role)continue;const targeted=Array.isArray(c.targetIds)&&c.targetIds.includes(n.cfg.id);if(targeted||n.group.position.distanceTo(obj.position)<=radius){n.distract(obj.position,duration,c.approachRadius||1.05);count++;}}
     this.distractedCount+=count;
     const names={coffee:'Kávovar se hlasitě čistí.',microwave:'Mikrovlnka: PÍP. PÍP. PÍP.',copier:'Kopírka právě dostala existenční krizi.',phone:'Telefon zvoní. Někdo to bude muset řešit.',snacks:'„Občerstvení v kuchyňce!“',projector:'Projektor svítí. PM nemůže odolat.',meeting:'Nový meeting vytvořen. Korporát se přesouvá.',elevator:'Výtah přijíždí s důstojným cinknutím.',printerjam:'Tiskárna je zaseknutá. IT jde do akce.',door:'Dveře otevřeny.'};
     const targeted=Array.isArray(c.targetIds)&&c.targetIds.length;this.toast(targeted?`${names[c.type]||c.label} Blokující kolega opouští průchod — máš pár sekund.`:`${names[c.type]||c.label} Vyrušeno NPC: ${count}`);
@@ -559,7 +696,7 @@ class Game {
     const prev=this.closest;this.closest=this.nearestInteraction();if(prev&&prev!==this.closest)prev.scale.setScalar(1);const inter=$('#interaction');if(this.closest){inter.textContent=`E — ${this.closest.userData.cfg.label}`;inter.classList.remove('hidden');this.closest.scale.setScalar(1+Math.sin(this.elapsed*5)*.05);}else inter.classList.add('hidden');
   }
   update(dt){
-    if(!this.running||this.paused||this.finished)return;dt=Math.min(dt,.05);this.elapsed+=dt;if(this.level?.timeLimit && this.elapsed+this.penalty>=this.level.timeLimit){this.timeExpired();return;}this.movePlayer(dt);for(const n of this.npcs)n.update(dt);for(const o of this.interactive)o.rotation.y+=dt*.5;this.checkObjectives();this.updateCamera(dt);this.updateUI(dt);this.updateHUD();
+    if(!this.running||this.paused||this.finished)return;dt=Math.min(dt,.05);this.elapsed+=dt;if(this.level?.timeLimit && this.elapsed+this.penalty>=this.level.timeLimit){this.timeExpired();return;}this.movePlayer(dt);for(const n of this.npcs)n.update(dt);for(const o of this.interactive){if(o.userData.halo)o.userData.halo.rotation.z+=dt*.55;}this.checkObjectives();this.updateCamera(dt);this.updateUI(dt);this.updateHUD();
   }
   loop(){const dt=this.clock.getDelta();this.update(dt);this.renderer.render(this.scene,this.camera);requestAnimationFrame(()=>this.loop());}
   resize(){

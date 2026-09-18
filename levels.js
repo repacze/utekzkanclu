@@ -75,7 +75,7 @@ export const LEVELS = [
     theme:{floor:0x59616a,wall:0xd8dde2,accent:0xff7c70,fog:0x99a2aa,bg:0x89939b},
     size:[38,26], start:[-15,9], exit:[15,-9], timePar:92,
     obstacles:[...perimeter(38,26),desk(-13,8),desk(-7,8),desk(-1,8),desk(-13,3),desk(-7,3),desk(11,7),
-      wall(4,-9.1,.35,7.8),wall(4,5.1,.35,15.8),box(-2,-7,2.4,1.5,1.4,'kopírka'),plant(-12,-7),plant(13,2)],
+      wall(4,-9.1,.35,7.8),wall(4,5.1,.35,15.8),box(-2,-7,1.20,.82,1.18,'kopírka'),plant(-12,-7),plant(13,2)],
     npcs:[npc('coworker',4,-4,[[4,-4]],78,9,1.2,{id:'copyGate',hardBlock:true,gateRadius:1.35,gateHint:'Kolega blokuje jediný průchod. Kopírka ho odtud vytáhne.'}),npc('it',-12,-9,[[-12,-9],[-8,-9],[-8,-5],[-12,-5]],70,7.5,1.3),npc('coworker',11,3,[[11,3],[15,3],[15,8],[11,8]],70,8,1.15)],
     checkpoints:[cp(6,-4)],
     interactions:[it('copier',-2,-7,'Poslat na kopírku 1000 kopií',{targetIds:['copyGate'],duration:14}),it('phone',-2,7,'Rozezvonit telefon',{radius:8,duration:7})]
@@ -116,9 +116,9 @@ export const LEVELS = [
     hint:'Dveře můžeš otevřít kdykoli, ale IT před nimi stojí jako fyzická překážka, dokud ho neodlákáš.',
     theme:{floor:0x555d65,wall:0xd7dce0,accent:0xc49cff,fog:0x949da5,bg:0x848e96},
     size:[44,30], start:[-18,11], exit:[18,-11], timePar:125,
-    obstacles:[...perimeter(44,30),desk(-16,10),desk(-10,10),desk(-4,10),desk(3,10),box(0,5,2.4,1.4,1.4,'tiskárna'),
+    obstacles:[...perimeter(44,30),desk(-16,10),desk(-10,10),desk(-4,10),desk(3,10),box(0,5,1.20,.82,1.00,'tiskárna'),
       wall(8,-10.7,.35,8.6),wall(8,5.7,.35,18.6),box(8,-5,.35,2.4,2.8,'dveře',{id:'l7-service-door',door:true}),plant(-15,-7),plant(16,7)],
-    npcs:[npc('it',8,-5,[[8,-5]],76,9,1.3,{id:'itGate',hardBlock:true,gateRadius:1.35,gateHint:'IT stojí přímo před servisními dveřmi. Zasekni tiskárnu a odlákej ho.'}),npc('it',-9,-9,[[-9,-9],[-3,-9],[-3,-5],[-9,-5]],72,8,1.25),npc('boss',15,9,[[15,9],[18,9],[18,3],[15,3]],84,10,1.15)],
+    npcs:[npc('it',6.65,-5,[[6.65,-5]],76,9,1.3,{id:'itGate',hardBlock:true,gateRadius:1.35,gateHint:'IT stojí přímo před servisními dveřmi. Zasekni tiskárnu a odlákej ho.'}),npc('it',-9,-9,[[-9,-9],[-3,-9],[-3,-5],[-9,-5]],72,8,1.25),npc('boss',15,9,[[15,9],[18,9],[18,3],[15,3]],84,10,1.15)],
     checkpoints:[cp(10,-5)],
     interactions:[it('printerjam',0,5,'Zaseknout tiskárnu',{targetIds:['itGate'],duration:15}),it('door',7.3,-5,'Otevřít servisní dveře',{opens:'l7-service-door'}),it('workspot',-10,9.1,'Předstírat práci')]
   },
@@ -147,7 +147,7 @@ export const LEVELS = [
       wall(-5,-6.15,.35,19.7),wall(-5,11.15,.35,9.7),
       wall(7,-10.65,.35,10.7),wall(7,6.15,.35,19.7),box(7,-5,.35,2.6,2.8,'dveře',{id:'l9-final-door',door:true}),
       box(1,5,3,1.2,1.1,'projektorový stůl'),plant(18,9),plant(-18,-8)],
-    npcs:[npc('coworker',-5,5,[[ -5,5]],80,9,1.2,{id:'meetingGate',hardBlock:true,gateRadius:1.35,gateHint:'Kolega drží první průchod. Svolej meeting na druhém konci patra.'}),npc('pm',7,-5,[[7,-5]],84,9.5,1.5,{id:'projectorGate',hardBlock:true,gateRadius:1.35,gateHint:'PM hlídá druhý průchod. Zapni projektor, aby šel řešit prezentaci.'}),npc('boss',17,-9,[[17,-9],[12,-9],[12,-13],[17,-13]],86,10,1.15)],
+    npcs:[npc('coworker',-5,5,[[ -5,5]],80,9,1.2,{id:'meetingGate',hardBlock:true,gateRadius:1.35,gateHint:'Kolega drží první průchod. Svolej meeting na druhém konci patra.'}),npc('pm',5.65,-5,[[5.65,-5]],84,9.5,1.5,{id:'projectorGate',hardBlock:true,gateRadius:1.35,gateHint:'PM hlídá druhý průchod. Zapni projektor, aby šel řešit prezentaci.'}),npc('boss',17,-9,[[17,-9],[12,-9],[12,-13],[17,-13]],86,10,1.15)],
     checkpoints:[cp(-2,5),cp(10,-5)],
     interactions:[it('meeting',-17,10,'Rezervovat poradu na druhém konci patra',{targetIds:['meetingGate'],duration:15}),it('projector',1,5,'Zapnout projektor a prezentaci',{targetIds:['projectorGate'],duration:14}),it('door',6.3,-5,'Otevřít poslední dveře',{opens:'l9-final-door'})]
   },
@@ -162,7 +162,7 @@ export const LEVELS = [
     obstacles:[...perimeter(54,36),desk(-21,13),desk(-16,13),desk(-21,8),desk(-16,8),desk(-4,13),desk(1,13),desk(-4,8),desk(1,8),desk(13,8),desk(18,8),
       wall(-10,-5.65,.35,24.7),wall(-10,13.65,.35,8.7),
       wall(6,-10.65,.35,14.7),wall(6,8.65,.35,18.7),
-      box(0,4,3,1.3,1.1,'kuchyňská linka'),box(0,-6,2.4,1.4,1.4,'kopírka'),
+      box(0,4,3,1.3,1.1,'kuchyňská linka'),box(0,-6,1.20,.82,1.18,'kopírka'),
       wall(-7.25,-13,39.5,.35),wall(21.25,-13,11.5,.35),box(14,-13,3,.8,1.2,'turniket',{id:'l10-turnstile'}),box(19,-10,5,1.5,1.15,'recepce'),plant(23,10),plant(-22,-10)],
     npcs:[npc('chatter',-10,8,[[-10,8]],88,9,1.25,{id:'finalChatter',hardBlock:true,gateRadius:1.35,passItem:'folder',gateHint:'První blokáda: desky nebo meeting. Bez toho tě kolega nepustí.'}),npc('boss',6,-2,[[6,-2]],94,11,1.25,{id:'finalBoss',hardBlock:true,gateRadius:1.4,gateHint:'Šéf blokuje jediný průchod. Odlákej ho kancelářskou katastrofou.'}),npc('pm',-2,-2,[[-2,-2],[-7,-2],[-7,3],[-2,3]],80,9,1.5),npc('hr',12,4,[[12,4],[18,4],[18,9],[12,9]],82,9.5,1.3),npc('reception',19,-11.5,[[19,-11.5],[22,-11.5]],96,11.5,.75)],
     checkpoints:[cp(-7,8),cp(9,-2),cp(14,-11)],
