@@ -222,8 +222,12 @@ class Game {
   constructor(){
     this.canvas=$('#game'); this.renderer=new THREE.WebGLRenderer({canvas:this.canvas,antialias:SAVE.settings.quality==='high',powerPreference:'high-performance'});
     this.renderer.setPixelRatio(Math.min(devicePixelRatio,SAVE.settings.quality==='high'?1.65:1)); this.renderer.shadowMap.enabled=SAVE.settings.quality==='high'; this.renderer.shadowMap.type=THREE.PCFSoftShadowMap; this.renderer.outputColorSpace=THREE.SRGBColorSpace; this.renderer.toneMapping=THREE.ACESFilmicToneMapping; this.renderer.toneMappingExposure=1.08;
-    this.scene=new THREE.Scene(); this.world=new THREE.Group(); this.scene.add(this.world); this.camera=new THREE.PerspectiveCamera(58,innerWidth/innerHeight,.1,150);
-    this.clock=new THREE.Clock(); this.keys={}; this.joy={x:0,y:0}; this.cameraYaw=Math.PI*.15; this.cameraPitch=.45; this.camDistance=6.6; this.dragging=false; this.lastPointer=null;
+    this.scene=new THREE.Scene(); this.world=new THREE.Group(); this.scene.add(this.world);
+    // Commandos-style fixed isometric camera. No mouse look, no shoulder camera.
+    this.cameraView=9.2;
+    const aspect=innerWidth/innerHeight;
+    this.camera=new THREE.OrthographicCamera(-this.cameraView*aspect,this.cameraView*aspect,this.cameraView,-this.cameraView,.1,180);
+    this.clock=new THREE.Clock(); this.keys={}; this.joy={x:0,y:0}; this.cameraYaw=Math.PI*.25; this.cameraPitch=1.02; this.camDistance=19.0;
     this.running=false;this.paused=false;this.finished=false;this.level=null;this.levelIndex=0;this.player=null;this.playerRadius=.38;this.npcs=[];this.interactive=[];this.obstacleMeshes=[];this.exitMesh=null;this.checkpointMeshes=[];this.checkpointIndex=-1;this.elapsed=0;this.penalty=0;this.catches=0;this.diversions=0;this.distractedCount=0;this.sprinting=false;this.stealth=false;this.working=false;this.tactical=false;this.inventory={badge:false,folder:false,headset:false};this.closest=null;this.toastTimer=0;this.tutorialTimer=0;this.lastNoise=0;this.raceFailed=false;this.usedTypes=new Set();this.uniqueDiversions=new Set();this.navVersion=0;this.safeUntil=0;this.mobileSprint=false;
     this.buildStaticLights(); this.bindEvents(); this.resize(); this.renderLevelCards(); this.syncSettingsUI(); requestAnimationFrame(()=>this.loop());
   }
@@ -263,21 +267,17 @@ class Game {
   makeFloor(level){
     const [w,d]=level.size;const tex=this.proceduralTexture('#666c72',22,'carpet');tex.repeat.set(w/3,d/3);
     const mat=new THREE.MeshStandardMaterial({color:level.theme.floor,map:tex,roughness:.96,metalness:0});const floor=new THREE.Mesh(new THREE.PlaneGeometry(w,d),mat);floor.rotation.x=-Math.PI/2;floor.receiveShadow=true;this.world.add(floor);
-    const ceiling=new THREE.Mesh(new THREE.PlaneGeometry(w,d),new THREE.MeshStandardMaterial({color:0xf0f1ef,roughness:.95,side:THREE.DoubleSide}));ceiling.rotation.x=Math.PI/2;ceiling.position.y=3.04;ceiling.receiveShadow=true;this.world.add(ceiling);
+    // Open-top office: no ceiling mesh, so the third-person camera always has a clear view.
     const cols=Math.max(2,Math.floor(w/11)),rows=Math.max(2,Math.floor(d/10));
     for(let ix=0;ix<cols;ix++)for(let iz=0;iz<rows;iz++){
       const x=-w/2+(ix+.5)*w/cols,z=-d/2+(iz+.5)*d/rows;
-      const panel=new THREE.Mesh(new THREE.BoxGeometry(2.7,.035,.62),new THREE.MeshStandardMaterial({color:0xf8fbff,emissive:0xddeeff,emissiveIntensity:2.0,roughness:.35}));panel.position.set(x,3.0,z);this.world.add(panel);
       if(SAVE.settings.quality==='high' && (ix+iz)%2===0){const l=new THREE.PointLight(0xeaf4ff,1.30,9,2);l.position.set(x,2.76,z);this.world.add(l);}
     }
     this.addOfficeShell(level);
   }
   addOfficeShell(level){
     const [w,d]=level.size;
-    const trimMat=new THREE.MeshStandardMaterial({color:0xb8bdc1,roughness:.48,metalness:.18});
-    // subtle ceiling grid
-    for(let x=-w/2+3;x<w/2;x+=3){const m=new THREE.Mesh(new THREE.BoxGeometry(.018,.025,d-.6),trimMat);m.position.set(x,2.985,0);this.world.add(m);}
-    for(let z=-d/2+3;z<d/2;z+=3){const m=new THREE.Mesh(new THREE.BoxGeometry(w-.6,.025,.018),trimMat);m.position.set(0,2.985,z);this.world.add(m);}
+    // Open-top office: ceiling grid intentionally omitted for camera visibility.
     // faux city windows on the far perimeter - visual only, collision remains the wall.
     const glass=new THREE.MeshPhysicalMaterial({color:0x7897ab,roughness:.08,metalness:.08,transparent:true,opacity:.82,transmission:.18,thickness:.08,emissive:0x162a3a,emissiveIntensity:.18});
     const frame=new THREE.MeshStandardMaterial({color:0x2b333a,roughness:.38,metalness:.62});
@@ -539,9 +539,13 @@ class Game {
     $('#result-title').textContent=this.catches===0?'Zmizel jsi beze stopy.':this.catches===1?'Jednou tě přibrzdili. Ale jsi venku.':'Bylo to těsné. Svoboda je svoboda.';$('#stars').textContent='★'.repeat(stars)+'☆'.repeat(3-stars);$('#result-time').textContent=fmtTime(total);$('#result-catches').textContent=this.catches;$('#result-diversions').textContent=this.diversions;$('#result-distracted').textContent=this.distractedCount;$('#result-style').textContent=this.catches===0?'GHOST':'KORPORÁTNÍ SURVIVOR';$('#result-best').textContent=fmtTime(SAVE.best[id]);$('#result-next').style.display=id<LEVELS.length?'block':'none';this.showScreen('result');
   }
   updateCamera(dt){
-    const bob=this.sprinting?Math.sin(this.elapsed*12)*.035:0;const target=this.player.position.clone().add(new THREE.Vector3(0,1.35+bob,0));const cp=Math.cos(this.cameraPitch),sp=Math.sin(this.cameraPitch);const dir=new THREE.Vector3(Math.sin(this.cameraYaw)*cp,sp,Math.cos(this.cameraYaw)*cp);let desired=target.clone().addScaledVector(dir,this.camDistance);desired.y=Math.max(desired.y,1.2);
-    const rayDir=desired.clone().sub(target);const dist=rayDir.length();rayDir.normalize();const ray=new THREE.Raycaster(target,rayDir,.15,dist);const hits=ray.intersectObjects(this.obstacleMeshes,false);if(hits.length)desired=target.clone().addScaledVector(rayDir,Math.max(1.3,hits[0].distance-.35));
-    const shoulder=new THREE.Vector3(Math.cos(this.cameraYaw),0,-Math.sin(this.cameraYaw)).multiplyScalar(.48);desired.add(shoulder);this.camera.position.lerp(desired,1-Math.pow(.001,dt));this.camera.lookAt(target.clone().add(shoulder.clone().multiplyScalar(.28)));
+    // Fixed high-angle tactical view. The angle never changes; only the camera center follows the player.
+    const target=this.player.position.clone().add(new THREE.Vector3(0,.65,0));
+    const cp=Math.cos(this.cameraPitch),sp=Math.sin(this.cameraPitch);
+    const dir=new THREE.Vector3(Math.sin(this.cameraYaw)*cp,sp,Math.cos(this.cameraYaw)*cp);
+    const desired=target.clone().addScaledVector(dir,this.camDistance);
+    this.camera.position.lerp(desired,1-Math.pow(.00008,dt));
+    this.camera.lookAt(target);
   }
   updateHUD(){
     if(!this.level)return;$('#hud-time').textContent=this.level.timeLimit?`17:00 za ${fmtTime(Math.max(0,this.level.timeLimit-this.elapsed-this.penalty))}`:fmtTime(this.elapsed+this.penalty);$('#hud-diversions').textContent=`Diverze ${this.diversions}`;$('#hud-catches').textContent=`Chycení ${this.catches}`;
@@ -558,13 +562,21 @@ class Game {
     if(!this.running||this.paused||this.finished)return;dt=Math.min(dt,.05);this.elapsed+=dt;if(this.level?.timeLimit && this.elapsed+this.penalty>=this.level.timeLimit){this.timeExpired();return;}this.movePlayer(dt);for(const n of this.npcs)n.update(dt);for(const o of this.interactive)o.rotation.y+=dt*.5;this.checkObjectives();this.updateCamera(dt);this.updateUI(dt);this.updateHUD();
   }
   loop(){const dt=this.clock.getDelta();this.update(dt);this.renderer.render(this.scene,this.camera);requestAnimationFrame(()=>this.loop());}
-  resize(){this.renderer.setSize(innerWidth,innerHeight,false);this.camera.aspect=innerWidth/innerHeight;this.camera.updateProjectionMatrix();}
+  resize(){
+    this.renderer.setSize(innerWidth,innerHeight,false);
+    const aspect=innerWidth/innerHeight;
+    this.camera.left=-this.cameraView*aspect;
+    this.camera.right=this.cameraView*aspect;
+    this.camera.top=this.cameraView;
+    this.camera.bottom=-this.cameraView;
+    this.camera.updateProjectionMatrix();
+  }
   renderLevelCards(){
     $('#level-grid').innerHTML=LEVELS.map(l=>{const locked=l.id>SAVE.unlocked,b=SAVE.best[l.id],s=SAVE.stars[l.id]||0;return `<button class="level-card ${locked?'locked':''}" data-level="${l.id}" ${locked?'disabled':''}><div class="level-number">LEVEL ${String(l.id).padStart(2,'0')}</div><h3>${l.name}</h3><p>${l.subtitle}</p><div class="level-meta"><span>${'★'.repeat(s)}${'☆'.repeat(3-s)}</span><span>${b?fmtTime(b):'—'}</span></div></button>`;}).join('');
     document.querySelectorAll('[data-level]').forEach(b=>b.addEventListener('click',()=>this.startLevel(Number(b.dataset.level)-1)));
     $('#play-btn').textContent=SAVE.unlocked>1?'POKRAČOVAT':'NOVÁ HRA';
   }
-  syncSettingsUI(){const s=SAVE.settings;$('#set-sens').value=s.sens;$('#set-sfx').value=s.sfx;$('#set-music').value=s.music;$('#set-quality').value=s.quality;$('#set-invert').checked=s.invertY;}
+  syncSettingsUI(){const s=SAVE.settings;$('#set-sfx').value=s.sfx;$('#set-music').value=s.music;$('#set-quality').value=s.quality;}
   applyQuality(){
     const high=SAVE.settings.quality==='high';
     this.renderer.setPixelRatio(Math.min(devicePixelRatio,high?1.7:1));
@@ -576,16 +588,14 @@ class Game {
     addEventListener('resize',()=>this.resize());
     addEventListener('keydown',e=>{if(this.running&&['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Tab'].includes(e.code))e.preventDefault();this.keys[e.code]=true;const oneShot=['Escape','KeyC','ControlLeft','ControlRight','KeyE','KeyQ','Tab'];if(e.repeat&&oneShot.includes(e.code))return;if(e.code==='Escape'){if(this.finished)return;if(this.paused)this.resume();else this.pause();return;}if(!this.running||this.paused||this.finished)return;if(e.code==='KeyC'||e.code==='ControlLeft'||e.code==='ControlRight'){this.stealth=!this.stealth;this.working=false;}if(e.code==='KeyE')this.doInteraction();if(e.code==='KeyQ')this.quickGadget();if(e.code==='Tab')this.tactical=!this.tactical;});
     addEventListener('keyup',e=>{this.keys[e.code]=false;});
-    addEventListener('blur',()=>{this.keys={};this.mobileSprint=false;this.sprinting=false;this.dragging=false;this.joy.x=this.joy.y=0;});
-    this.canvas.addEventListener('pointerdown',e=>{if(isTouch && e.clientX<innerWidth*.42)return;this.dragging=true;this.lastPointer={x:e.clientX,y:e.clientY};this.canvas.setPointerCapture?.(e.pointerId);});
-    this.canvas.addEventListener('pointermove',e=>{if(!this.dragging||!this.running||this.paused)return;const dx=e.clientX-this.lastPointer.x,dy=e.clientY-this.lastPointer.y;const sens=.0045*SAVE.settings.sens;this.cameraYaw-=dx*sens;this.cameraPitch+=dy*sens*(SAVE.settings.invertY?-1:1);this.cameraPitch=clamp(this.cameraPitch,.18,1.0);this.lastPointer={x:e.clientX,y:e.clientY};});
-    this.canvas.addEventListener('pointerup',()=>this.dragging=false);this.canvas.addEventListener('pointercancel',()=>this.dragging=false);this.canvas.addEventListener('wheel',e=>{this.camDistance=clamp(this.camDistance+e.deltaY*.006,4.3,9);},{passive:true});
+    addEventListener('blur',()=>{this.keys={};this.mobileSprint=false;this.sprinting=false;this.joy.x=this.joy.y=0;});
+    // Camera is intentionally fixed. Mouse/touch gestures do not rotate or zoom the view.
     $('#play-btn').onclick=()=>this.startLevel(Math.min(SAVE.unlocked,LEVELS.length)-1);$('#levels-btn').onclick=()=>this.showScreen('levels');$('#settings-btn').onclick=()=>this.showScreen('settings');document.querySelectorAll('[data-back]').forEach(b=>b.onclick=()=>this.showScreen('main'));
     $('#resume-btn').onclick=()=>this.resume();$('#restart-btn').onclick=()=>this.startLevel(this.levelIndex);$('#quit-btn').onclick=()=>this.quit();$('#result-restart').onclick=()=>this.startLevel(this.levelIndex);$('#result-menu').onclick=()=>{this.running=false;$('#hud').classList.add('hidden');$('#mobile-controls').classList.add('hidden');this.showScreen('levels');};$('#result-next').onclick=()=>this.startLevel(Math.min(this.levelIndex+1,LEVELS.length-1));$('#fail-restart').onclick=()=>this.startLevel(this.levelIndex);$('#fail-menu').onclick=()=>this.quit();
     $('#pause-btn').onclick=()=>this.pause();$('#tactical-btn').onclick=()=>{this.tactical=!this.tactical;};
     $('#btn-interact').onpointerdown=e=>{e.preventDefault();this.doInteraction();};$('#btn-gadget').onpointerdown=e=>{e.preventDefault();this.quickGadget();};$('#btn-stealth').onpointerdown=e=>{e.preventDefault();this.stealth=!this.stealth;this.working=false;};$('#btn-sprint').onpointerdown=e=>{e.preventDefault();this.mobileSprint=true;e.currentTarget.setPointerCapture?.(e.pointerId);};$('#btn-sprint').onpointerup=()=>this.mobileSprint=false;$('#btn-sprint').onpointercancel=()=>this.mobileSprint=false;addEventListener('pointerup',()=>this.mobileSprint=false);
     const base=$('#joy-base'),stick=$('#joy-stick');let jid=null;const joyMove=e=>{const r=base.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,dx=e.clientX-cx,dy=e.clientY-cy,max=r.width*.34,len=Math.hypot(dx,dy),m=len>max?max/len:1;const px=dx*m,py=dy*m;this.joy.x=px/max;this.joy.y=py/max;stick.style.transform=`translate(calc(-50% + ${px}px),calc(-50% + ${py}px))`;};base.addEventListener('pointerdown',e=>{jid=e.pointerId;base.setPointerCapture(jid);joyMove(e);});base.addEventListener('pointermove',e=>{if(e.pointerId===jid)joyMove(e);});const joyEnd=e=>{if(e.pointerId===jid){jid=null;this.joy.x=this.joy.y=0;stick.style.transform='translate(-50%,-50%)';}};base.addEventListener('pointerup',joyEnd);base.addEventListener('pointercancel',joyEnd);
-    const set=(id,key,parser=v=>v)=>{$(id).addEventListener('input',e=>{SAVE.settings[key]=parser(e.target.type==='checkbox'?e.target.checked:e.target.value);persist();AUDIO.update();});};set('#set-sens','sens',Number);set('#set-sfx','sfx',Number);set('#set-music','music',Number);set('#set-quality','quality',String);$('#set-quality').addEventListener('change',()=>this.applyQuality());set('#set-invert','invertY',Boolean);
+    const set=(id,key,parser=v=>v)=>{$(id).addEventListener('input',e=>{SAVE.settings[key]=parser(e.target.type==='checkbox'?e.target.checked:e.target.value);persist();AUDIO.update();});};set('#set-sfx','sfx',Number);set('#set-music','music',Number);set('#set-quality','quality',String);$('#set-quality').addEventListener('change',()=>this.applyQuality());
     $('#reset-progress').onclick=()=>{if(confirm('Opravdu smazat postup, časy a hvězdy?')){SAVE={unlocked:1,best:{},stars:{},tutorials:{},settings:{...SAVE.settings}};persist();this.renderLevelCards();this.toast?.('Postup resetován.');}};
   }
 }
