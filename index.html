@@ -4,11 +4,14 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#11151d" />
+  <meta name="description" content="16:59 — 3D kancelářská stealth hra v prohlížeči" />
   <title>16:59 — Útěk z kanclu</title>
+  <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
   <div id="app">
     <canvas id="game"></canvas>
+    <div id="cinematic-fx" aria-hidden="true"></div>
 
     <div id="hud" class="hidden">
       <div class="hud-top-left panel glass">
@@ -49,7 +52,7 @@
 
     <div id="screen-main" class="screen active">
       <div class="hero-card">
-        <div class="eyebrow">KORPORÁTNÍ STEALTH AKCE</div>
+        <div class="eyebrow">3D KORPORÁTNÍ STEALTH</div>
         <h1>16:59</h1>
         <h2>ÚTĚK Z KANCLU</h2>
         <p class="tagline">„Ještě jeden rychlý task.“</p>
@@ -121,6 +124,6 @@
       </div>
     </div>
   </div>
-  <script type="module" src="/src/main.js"></script>
+  <script type="module" src="./main.js"></script>
 </body>
 </html>
