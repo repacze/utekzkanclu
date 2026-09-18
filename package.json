@@ -1,0 +1,21 @@
+{
+  "name": "1659-utek-z-kanclu",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node tests/validate-levels.mjs && node tests/source-sanity.mjs && node tests/runtime-smoke.mjs && node --check src/main.js && node --check src/levels.js && node --check vite.config.js"
+  },
+  "dependencies": {
+    "three": "0.180.0"
+  },
+  "devDependencies": {
+    "vite": "8.3.0"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#11151d" />
+  <title>16:59 — Útěk z kanclu</title>
+</head>
+<body>
+  <div id="app">
+    <canvas id="game"></canvas>
+
+    <div id="hud" class="hidden">
+      <div class="hud-top-left panel glass">
+        <div class="level-label" id="hud-level">LEVEL 1</div>
+        <div class="objective" id="hud-objective">Dostaň se ven.</div>
+        <div class="chips">
+          <span id="hud-time" class="chip">00:00.0</span>
+          <span id="hud-diversions" class="chip">Diverze 0</span>
+          <span id="hud-catches" class="chip">Chycení 0</span>
+        </div>
+      </div>
+
+      <div class="hud-top-right panel glass">
+        <div class="status-row"><span>PODEZŘENÍ</span><span id="suspicion-label">KLID</span></div>
+        <div class="meter"><div id="suspicion-fill"></div></div>
+        <div class="status-row"><span>REŽIM</span><span id="stance-label">BĚŽNĚ</span></div>
+        <div id="inventory" class="inventory"></div>
+      </div>
+
+      <div id="interaction" class="interaction hidden">E — Interakce</div>
+      <div id="toast" class="toast hidden"></div>
+      <div id="tutorial" class="tutorial hidden"></div>
+      <div id="crosshair" class="crosshair">•</div>
+
+      <button id="tactical-btn" class="mobile-utility">TAKTIKA</button>
+      <button id="pause-btn" class="mobile-pause">II</button>
+    </div>
+
+    <div id="mobile-controls" class="hidden">
+      <div id="joy-base" class="joy-base"><div id="joy-stick" class="joy-stick"></div></div>
+      <div class="mobile-actions">
+        <button id="btn-interact" class="action primary">E</button>
+        <button id="btn-sprint" class="action">RUN</button>
+        <button id="btn-stealth" class="action">C</button>
+        <button id="btn-gadget" class="action">Q</button>
+      </div>
+    </div>
+
+    <div id="screen-main" class="screen active">
+      <div class="hero-card">
+        <div class="eyebrow">KORPORÁTNÍ STEALTH AKCE</div>
+        <h1>16:59</h1>
+        <h2>ÚTĚK Z KANCLU</h2>
+        <p class="tagline">„Ještě jeden rychlý task.“</p>
+        <div class="menu-buttons">
+          <button id="play-btn" class="big-btn primary">POKRAČOVAT</button>
+          <button id="levels-btn" class="big-btn">VÝBĚR LEVELU</button>
+          <button id="settings-btn" class="big-btn">NASTAVENÍ</button>
+        </div>
+        <div class="controls-hint">WASD pohyb · myš kamera · Shift sprint · C stealth · E interakce · Tab taktika</div>
+      </div>
+    </div>
+
+    <div id="screen-levels" class="screen">
+      <div class="modal wide">
+        <div class="modal-head"><div><div class="eyebrow">KAMPAŇ</div><h2>Vyber misi</h2></div><button data-back class="close">×</button></div>
+        <div id="level-grid" class="level-grid"></div>
+      </div>
+    </div>
+
+    <div id="screen-settings" class="screen">
+      <div class="modal settings-modal">
+        <div class="modal-head"><div><div class="eyebrow">NASTAVENÍ</div><h2>Herní volby</h2></div><button data-back class="close">×</button></div>
+        <label>Citlivost kamery <input id="set-sens" type="range" min="0.2" max="2" step="0.1" /></label>
+        <label>Hlasitost SFX <input id="set-sfx" type="range" min="0" max="1" step="0.05" /></label>
+        <label>Hlasitost ambientu <input id="set-music" type="range" min="0" max="1" step="0.05" /></label>
+        <label class="row-label">Kvalita grafiky <select id="set-quality"><option value="high">High</option><option value="low">Low</option></select></label>
+        <label class="row-label">Invertovat Y <input id="set-invert" type="checkbox" /></label>
+        <button id="reset-progress" class="danger-btn">RESETOVAT POSTUP</button>
+      </div>
+    </div>
+
+    <div id="screen-pause" class="screen">
+      <div class="modal small">
+        <div class="eyebrow">PAUZA</div><h2 id="pause-title">Zadrž. Šéf jde kolem.</h2>
+        <button id="resume-btn" class="big-btn primary">POKRAČOVAT</button>
+        <button id="restart-btn" class="big-btn">RESTART LEVELU</button>
+        <button id="quit-btn" class="big-btn">HLAVNÍ MENU</button>
+      </div>
+    </div>
+
+    <div id="screen-result" class="screen">
+      <div class="modal result-modal">
+        <div class="eyebrow">MISE SPLNĚNA</div>
+        <h2 id="result-title">Zmizel jsi beze stopy.</h2>
+        <div id="stars" class="stars">★★★</div>
+        <div class="result-grid">
+          <div><span>Čas</span><strong id="result-time">00:00.0</strong></div>
+          <div><span>Chycení</span><strong id="result-catches">0</strong></div>
+          <div><span>Diverze</span><strong id="result-diversions">0</strong></div>
+          <div><span>Vyrušení NPC</span><strong id="result-distracted">0</strong></div>
+          <div><span>Styl</span><strong id="result-style">GHOST</strong></div>
+          <div><span>Nejlepší čas</span><strong id="result-best">00:00.0</strong></div>
+        </div>
+        <div class="menu-buttons horizontal">
+          <button id="result-restart" class="big-btn">ZNOVU</button>
+          <button id="result-menu" class="big-btn">LEVELY</button>
+          <button id="result-next" class="big-btn primary">DALŠÍ LEVEL</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="screen-fail" class="screen">
+      <div class="modal small">
+        <div class="eyebrow">MISE SELHALA</div>
+        <h2 id="fail-title">Poslední smažák je pryč.</h2>
+        <p id="fail-text">Tvůj kolega byl rychlejší. To se nesmí opakovat.</p>
+        <button id="fail-restart" class="big-btn primary">ZNOVU</button>
+        <button id="fail-menu" class="big-btn">MENU</button>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
