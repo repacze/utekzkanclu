@@ -29,7 +29,7 @@ export const LEVELS = [
     name:'Tichý odchod',
     subtitle:'První pravidlo: šéf nesmí vidět, že už máš bundu.',
     objective:'Dostaň se od stolu k východu. Tady ještě stačí čistý stealth.',
-    hint:'WASD pohyb · C stealth · Shift sprint · stoly skutečně kryjí výhled.',
+    hint:'WASD pohyb · C skrčit; u stolu C zalehnout pod stůl · Shift sprint · stoly skutečně kryjí výhled.',
     theme:{floor:0x626970,wall:0xd9dde1,accent:0xd9ff5b,fog:0xaab1b7,bg:0x929ba4},
     size:[30,22], start:[-11,7], exit:[11,-7], timePar:55,
     obstacles:[...perimeter(30,22),desk(-7,5),desk(-1,5),desk(5,5),desk(-7,0),desk(-1,0),desk(5,0),wall(4,-4,8,.45),plant(8,7)],
@@ -164,7 +164,7 @@ export const LEVELS = [
       wall(6,-10.65,.35,14.7),wall(6,8.65,.35,18.7),
       box(0,4,3,1.3,1.1,'kuchyňská linka'),box(0,-6,1.20,.82,1.18,'kopírka'),
       wall(-7.25,-13,39.5,.35),wall(21.25,-13,11.5,.35),box(14,-13,3,.8,1.2,'turniket',{id:'l10-turnstile'}),box(19,-10,5,1.5,1.15,'recepce'),plant(23,10),plant(-22,-10)],
-    npcs:[npc('chatter',-10,8,[[-10,8]],88,9,1.25,{id:'finalChatter',hardBlock:true,gateRadius:1.35,passItem:'folder',gateHint:'První blokáda: desky nebo meeting. Bez toho tě kolega nepustí.'}),npc('boss',6,-2,[[6,-2]],94,11,1.25,{id:'finalBoss',hardBlock:true,gateRadius:1.4,gateHint:'Šéf blokuje jediný průchod. Odlákej ho kancelářskou katastrofou.'}),npc('pm',-2,-2,[[-2,-2],[-7,-2],[-7,3],[-2,3]],80,9,1.5),npc('hr',12,4,[[12,4],[18,4],[18,9],[12,9]],82,9.5,1.3),npc('reception',19,-11.5,[[19,-11.5],[22,-11.5]],96,11.5,.75)],
+    npcs:[npc('chatter',-10,8,[[-10,8]],88,9,1.25,{id:'finalChatter',hardBlock:true,gateRadius:1.35,passItem:'folder',gateHint:'První blokáda: desky nebo meeting. Bez toho tě kolega nepustí.'}),npc('boss',6,-2,[[6,-2]],94,11,1.25,{id:'finalBoss',hardBlock:true,gateRadius:1.4,gateHint:'Šéf blokuje jediný průchod. Odlákej ho kancelářskou katastrofou.'}),npc('pm',-2,-2,[[-2,-2],[-7,-2],[-7,3],[-2,3]],80,9,1.5),npc('hr',12,4,[[12,4],[18,4],[18,10],[12,10]],82,9.5,1.3),npc('reception',19,-11.5,[[19,-11.5],[22,-11.5]],96,11.5,.75)],
     checkpoints:[cp(-7,8),cp(9,-2),cp(14,-11)],
     interactions:[it('pickup-folder',-20,12,'Sebrat desky'),it('meeting',-22,10,'Svolat mimořádný meeting',{targetIds:['finalChatter'],duration:14}),it('pickup-badge',-2,11,'Sebrat badge'),it('coffee',0,4,'Spustit čištění kávovaru',{targetIds:['finalBoss'],duration:12}),it('snacks',2,2,'Oznámit občerstvení',{targetIds:['finalBoss'],duration:13}),it('copier',0,-6,'Poslat 1000 kopií',{targetIds:['finalBoss'],duration:14}),it('pickup-headset',-4,12,'Sebrat headset'),it('badge-door',14,-12.2,'Přiložit badge k turniketu',{requires:'badge',opens:'l10-turnstile'})]
   }
